@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (toggled on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), Georgia, serif;
+  --font-subtitle: var(--font-montserrat), var(--font-inter), system-ui, sans-serif;
+  --color-paper: #f5f1e8;
+  --color-ink: #1a1a1a;
+}
+
+.dark {
+  --color-paper: #1a1a1a;
+  --color-ink: #f5f1e8;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-paper), 0 0 0 4px var(--color-ink);
+  outline: none;
+}
+
+::selection {
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+}
+
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility section-container {
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+/* Type scale */
+@utility type-title {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+@utility type-subtitle {
+  font-family: var(--font-subtitle);
+  letter-spacing: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  @media (min-width: 768px) {
+    font-size: 1.5rem;
+  }
+}
+
+@utility type-body-large {
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.5;
+  @media (min-width: 768px) {
+    font-size: 1.25rem;
+  }
+}
+
+@utility type-body {
+  font-family: var(--font-sans);
+  max-width: 70ch;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.65;
+  @media (min-width: 768px) {
+    font-size: 1rem;
+  }
+}
