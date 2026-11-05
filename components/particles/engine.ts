@@ -40,8 +40,8 @@ export const SIM = {
   stagger: 1, // spread of when particles switch attractor during a transition
   // Sensors
   sensorDist: 28, // look-ahead distance
-  sensorAngle: 0.55, // radians off heading for the left/right sensors (~32°)
-  turnGain: 6, // radians of turn per unit brightness difference (L - R)
+  sensorAngle: 0.19, // radians off heading for the left/right sensors (~11°)
+  turnGain: 0.8, // radians of turn per unit brightness difference (L - R)
   maxTurn: 0.3, // radians/frame cap on the sensor turn
   alignMin: 0, // sensing off when cos(heading vs target dir) < this (0 = >90° off course)
   // Field
