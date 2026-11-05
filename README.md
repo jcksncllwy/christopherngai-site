@@ -51,11 +51,14 @@ components/
   SectionSlide.tsx     per-section snap wrapper (horizontal desktop, vertical mobile)
   NavArrow.tsx
   particles/
-    engine.ts          the particle field (simulation + rendering)
+    engine.ts          picks a render engine
+    shared.ts          params, targets, packed particle state, frame stats
+    canvas2d.ts        CPU sim + Canvas 2D rendering
+    webgpu.ts          compute-shader sim + instanced rendering (WGSL inline)
     noise.ts           seeded 3D simplex + tileable ridged-noise texture
     scenes.ts          per-section image placement + .bin loader
-    ParticleCanvas.tsx React wrapper (desktop only)
-    TuningPanel.tsx    live controls (slider icon bottom-left, or press H)
+    ParticleCanvas.tsx React wrapper (desktop only), engine switching + state handoff
+    TuningPanel.tsx    live controls + perf stats (slider icon bottom-left, or press H)
 hooks/                 useScrollProgress, useIsMobile
 lib/data.ts            all page copy
 scripts/pack-dots.mjs  JSON dot clouds -> .bin
@@ -63,7 +66,8 @@ scripts/pack-dots.mjs  JSON dot clouds -> .bin
 
 ## The particle field
 
-`engine.ts` has two movement models. Switch between them in the tuning panel.
+`canvas2d.ts` and `webgpu.ts` implement the same two movement models (see
+"Render engines" below). Switch between them in the tuning panel.
 
 **original:** your existing behaviour. Each particle eases toward a target that
 is lerped between the current scene's dot and the next one's by scroll
@@ -117,8 +121,53 @@ Rough numbers in headless Chrome (software rendering, 1440×900, mid-transition)
 Things that were tried and dropped:
 
 - **Curl-noise offsets on a lerped path.** It read as a random cloud.
-- **Live 3D noise (z = time).** About 3× the sim cost, with no visible
-  aesthetic gain over a slowly drifting static texture.
+- **Live 3D noise (z = time)** was dropped on Canvas 2D, where it cost far more
+  than the sim. It's back as a toggle, because on WebGPU it costs almost
+  nothing.
+
+## Render engines
+
+The tuning panel (bottom-left icon, or `H`) switches engines at run time. The
+running engine's particles are read back and handed to the new one, so the
+switch doesn't restart the animation.
+
+- **Canvas 2D (CPU)** (`canvas2d.ts`): the sim is a JS loop on the main
+  thread, and every particle becomes path geometry for the 2D context to
+  rasterize.
+- **WebGPU** (`webgpu.ts`): the sim is a compute shader (one invocation per
+  particle, ported line for line from the Canvas 2D engine). Particles are
+  drawn in one instanced draw of 4-vertex quads (tapered streak, square, or SDF
+  circle) with 4× MSAA. Particle state never leaves the GPU, so the CPU only
+  uploads about 200 bytes of uniforms per frame.
+
+`shared.ts` holds the parameters, scene → target mapping, the packed particle
+state format and the stats helper. `engine.ts` picks an engine.
+
+The panel also has:
+
+- **particles:** 30k (the original) up to 1M. Extra particles reuse the scene's
+  dots with a little jitter, and opacity is scaled by 30k / count so the image
+  keeps its tone.
+- **live 3D noise:** regenerates the steering field every frame as a slice
+  through 3D simplex noise (z advances by `noiseSpeed`). On Canvas 2D this runs
+  in JS on the main thread. On WebGPU it's a compute pass using the same
+  permutation table, so z = 0 matches the CPU texture.
+- **stats:** fps and frame interval, CPU time for sim, draw and live noise
+  (Canvas 2D) or encoding (WebGPU), and GPU compute and render time from
+  `timestamp-query` where the browser exposes it.
+
+Headless Chrome on an M-series Mac, 1440×900. GPU columns are GPU execution time:
+
+| | Canvas 2D: CPU per frame | WebGPU: GPU per frame |
+|---|---|---|
+| 30k, steer + streaks | ~3 ms sim + ~6 ms draw | ~0.07 ms compute + ~0.55 ms render |
+| 30k + live 3D noise | +~70 ms noise | ~0.5 ms compute (noise + sim) |
+| 1M + live 3D noise | ~100 ms sim + ~390 ms draw + ~56 ms noise | ~1.9 ms compute + ~8.7 ms render |
+
+Known differences: the Canvas 2D engine quantizes opacity into 16 buckets and
+unions overlapping shapes within a 32-shape chunk, so it reads slightly darker.
+WebGPU blends every particle at its exact opacity. Live noise on the GPU is
+normalized with the static texture's range instead of a per-frame min/max.
 
 ## Running
 

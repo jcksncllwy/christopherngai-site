@@ -8,14 +8,7 @@ const GRAD3 = new Float32Array([
 export type Noise3 = (x: number, y: number, z: number) => number;
 
 export function makeNoise3(seed = 1): Noise3 {
-  // Seeded permutation table (mulberry32) so the field is repeatable.
-  let s = seed >>> 0;
-  const rand = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const p = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  for (let i = 255; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
-  const perm = new Uint8Array(512), permMod12 = new Uint8Array(512);
-  for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; permMod12[i] = perm[i] % 12; }
+  const { perm, permMod12 } = makePerm(seed);
 
   const F3 = 1 / 3, G3 = 1 / 6;
   return function noise3(x: number, y: number, z: number) {
@@ -63,18 +56,42 @@ export type NoiseTextureOptions = {
   sharpness?: number;
 };
 
+/** Seeded permutation tables, shared with the WebGPU noise shader. */
+export function makePerm(seed = 1) {
+  let s = seed >>> 0;
+  const rand = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  const perm = new Uint8Array(512), permMod12 = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; permMod12[i] = perm[i] % 12; }
+  return { perm, permMod12 };
+}
+
+export type NoiseTexture = { data: Float32Array<ArrayBuffer>; min: number; max: number };
+
+const noiseCache = new Map<number, Noise3>();
+
+/**
+ * `z` slices through the 3D noise: z = 0 is the classic static texture, and
+ * advancing z every frame gives the "live 3D noise" variant. `min`/`max` are
+ * the raw range before normalizing (the GPU reuses them for its live slices).
+ */
 export function makeNoiseTexture(
   N = 256,
   seed = 1,
   { features = 5, octaves = 3, lacunarity = 2, gain = 0.5, ridged = true, sharpness = 3 }: NoiseTextureOptions = {},
-): Float32Array {
-  const noise3 = makeNoise3(seed);
+  z = 0,
+  out = new Float32Array(N * N),
+): NoiseTexture {
+  let noise3 = noiseCache.get(seed);
+  if (!noise3) { noise3 = makeNoise3(seed); noiseCache.set(seed, noise3); }
+  const n3 = noise3;
   const fbm = (x: number, y: number) => {
     let v = 0, amp = 1, f = features / N, norm = 0;
-    for (let o = 0; o < octaves; o++) { v += noise3(x * f, y * f, o * 17.3) * amp; norm += amp; amp *= gain; f *= lacunarity; }
+    for (let o = 0; o < octaves; o++) { v += n3(x * f, y * f, o * 17.3 + z) * amp; norm += amp; amp *= gain; f *= lacunarity; }
     return v / norm;
   };
-  const out = new Float32Array(N * N);
   let mn = Infinity, mx = -Infinity;
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
@@ -89,5 +106,5 @@ export function makeNoiseTexture(
   }
   // Normalize to [0,1]; sharpness > 1 thins the bright parts, < 1 fattens them.
   for (let i = 0; i < out.length; i++) out[i] = Math.pow((out[i] - mn) / (mx - mn), sharpness);
-  return out;
+  return { data: out, min: mn, max: mx };
 }
